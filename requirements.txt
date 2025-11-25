@@ -1,3 +1,5 @@
 tree-sitter
 tree-sitter-python
 openai
+langchain
+langchain-ollama
