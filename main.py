@@ -16,6 +16,7 @@ def main():
     parser.add_argument("--context", default=".", help="Directory to use for context retrieval (default: current dir)")
     parser.add_argument("--no-retrieval", action="store_true", help="Disable context retrieval")
     parser.add_argument("--clear-db", action="store_true", help="Clear the vector database before indexing")
+    parser.add_argument("--lora", type=str, default=None, help="Path to LoRA adapter folder. If None, use base Gemma model.")
     
     args = parser.parse_args()
     
@@ -68,7 +69,7 @@ def main():
                              print(f"  Failed to index {file}: {e}")
 
     # 2. Run Review
-    experts = [BugExpert(), SecurityExpert(), StyleExpert()]
+    experts = [BugExpert(lora_path=args.lora), SecurityExpert(lora_path=args.lora), StyleExpert(lora_path=args.lora)]
     
     files_to_review = []
     if os.path.isfile(target_path):

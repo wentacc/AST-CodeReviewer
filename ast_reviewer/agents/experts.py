@@ -1,13 +1,45 @@
 from typing import List, Dict
-from langchain_ollama.llms import OllamaLLM
-from langchain_core.prompts import ChatPromptTemplate
+#from langchain_ollama.llms import OllamaLLM
+#from langchain_core.prompts import ChatPromptTemplate
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from peft import PeftModel
 
 class BaseExpert:
-    def __init__(self, name: str, role_description: str):
+    def __init__(self, name: str, role_description: str, lora_path: str = None):
         self.name = name
         self.role_description = role_description
-        # Initialize Ollama model (assuming llama3.2 is available)
-        self.model = OllamaLLM(model='llama3.2')
+        # Initialize gamma-3-4b-it
+        base_model_id = "google/gemma-3-4b-it"
+
+        print(f"[{self.name}] Loading base model: {base_model_id}")
+
+        # Load base model
+        tokenizer = AutoTokenizer.from_pretrained(base_model_id)
+        model = AutoModelForCausalLM.from_pretrained(
+            base_model_id,
+            device_map="auto",
+            torch_dtype="auto",
+        )
+
+        # --------------------------------------------
+        # Load LoRA adapter (if provided)
+        # --------------------------------------------
+        if lora_path:
+            print(f"[{self.name}] Loading LoRA adapter from: {lora_path}")
+            model = PeftModel.from_pretrained(model, lora_path)
+        else:
+            print(f"[{self.name}] Using original Gemma-3-4B-IT model")
+
+        self.pipe = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            device_map="auto",
+            torch_dtype="auto",
+            max_new_tokens=512,
+        )
+
+        #self.model = OllamaLLM(model='llama3.2')
         
         self.template = """
 You are a specialized code review expert focusing ONLY on {role}.
@@ -28,38 +60,51 @@ Your task:
 
 Review:
 """
-        self.prompt = ChatPromptTemplate.from_template(self.template)
-        self.chain = self.prompt | self.model
-
+    def generate(self, prompt: str) -> str:
+        """Generate text using Gemma-3 model."""
+        output = self.pipe(prompt, do_sample=False)[0]["generated_text"]
+        # Strip prompt from output
+        return output[len(prompt):].strip()
+    
     def review(self, diff: str, context: List[Dict]) -> List[str]:
         """
-        Reviews the code using the LLM and returns a list of comments.
+        Reviews the code snippet and returns bullet-point comments.
         """
         try:
-            # Format context
+            # Format context chunks
             context_str = ""
             if context:
-                context_str = "\n".join([f"--- Chunk: {c['metadata']['name']} ---\n{c['content']}\n" for c in context])
-            
-            # Invoke the chain
-            response = self.chain.invoke({"role": self.role_description, "code": diff, "context": context_str})
-            
-            # Parse response (simple splitting for prototype)
+                context_str = "\n".join(
+                    [f"--- Chunk: {c['metadata']['name']} ---\n{c['content']}\n"
+                    for c in context]
+                )
+
+            # Build prompt
+            prompt = self.template.format(
+                role=self.role_description,
+                code=diff,
+                context=context_str
+            )
+
+            # Run model
+            response = self.generate(prompt)
+
+            # Parse model response
             comments = []
             if "No issues found" in response or not response.strip():
                 return []
-            
-            lines = response.split('\n')
-            for line in lines:
-                clean_line = line.strip()
-                if clean_line.startswith('- ') or clean_line.startswith('* ') or clean_line.startswith('1. '):
-                    comments.append(clean_line)
-            
-            # If no list items found but text exists, return the whole text as one comment
+
+            for line in response.split("\n"):
+                clean = line.strip()
+                if clean.startswith("- ") or clean.startswith("* ") or clean.startswith("1. "):
+                    comments.append(clean)
+
+            # fallback
             if not comments and response.strip():
                 comments.append(response.strip())
-                
+
             return comments
+
         except Exception as e:
             return [f"Error during LLM review: {str(e)}"]
 
