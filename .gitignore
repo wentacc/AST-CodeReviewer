@@ -28,7 +28,6 @@ ENV/
 
 # Project Specific
 data/
-generated_projects/
 chroma_db/
 .DS_Store
 
