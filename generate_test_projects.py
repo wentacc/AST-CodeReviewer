@@ -4,7 +4,7 @@ import re
 
 DATA_DIR = "./data/python-commits/merged"
 OUTPUT_DIR = "./generated_projects"
-MAX_FILES = 10
+MAX_FILES = 50
 
 def is_python_code(content):
     """

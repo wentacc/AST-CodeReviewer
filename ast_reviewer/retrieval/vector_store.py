@@ -13,7 +13,8 @@ class VectorStore:
         # For now, let's use the default SentenceTransformer (all-MiniLM-L6-v2) 
         # that Chroma provides if no function is specified.
         # Note: This requires 'sentence-transformers' which is usually installed with chromadb default
-        self.embedding_fn = embedding_functions.DefaultEmbeddingFunction()
+        # Use all-mpnet-base-v2 for better semantic retrieval
+        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-mpnet-base-v2")
         
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
