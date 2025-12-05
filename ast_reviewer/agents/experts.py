@@ -17,6 +17,9 @@ Here is the code snippet to review:
 {code}
 ```
 
+Additional Context (Related Code):
+{context}
+
 Your task:
 1. Identify any issues related specifically to **{role}**.
 2. If there are NO issues related to {role}, reply with "No issues found."
@@ -33,8 +36,13 @@ Review:
         Reviews the code using the LLM and returns a list of comments.
         """
         try:
+            # Format context
+            context_str = ""
+            if context:
+                context_str = "\n".join([f"--- Chunk: {c['metadata']['name']} ---\n{c['content']}\n" for c in context])
+            
             # Invoke the chain
-            response = self.chain.invoke({"role": self.role_description, "code": diff})
+            response = self.chain.invoke({"role": self.role_description, "code": diff, "context": context_str})
             
             # Parse response (simple splitting for prototype)
             comments = []
