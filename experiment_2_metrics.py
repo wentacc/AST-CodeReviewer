@@ -10,6 +10,7 @@ from ast_reviewer.retrieval.vector_store import VectorStore
 GENERATED_DIR = "./generated_projects"
 SNIPPET_SIZE = 30
 TOP_K = 3
+METRICS_OUTPUT_FILE = "experiment_2_metrics.md"
 
 def get_snippet(code, num_lines=SNIPPET_SIZE):
     lines = code.splitlines()
@@ -119,11 +120,20 @@ def calculate_recall(retrieved_chunks, definitions):
             
     return found_count / total_needed
 
-def run_metrics():
-    print("Running Quantitative Analysis for Experiment 2 (Refined)...")
+def run_metrics(
+    generated_dir: str = GENERATED_DIR,
+    snippet_size: int = SNIPPET_SIZE,
+    top_k: int = TOP_K,
+    output_file: str = METRICS_OUTPUT_FILE,
+    quiet: bool = False,
+):
+    if not quiet:
+        print("Running Quantitative Analysis for Experiment 2 (Refined)...")
     
-    files = glob.glob(os.path.join(GENERATED_DIR, "*.py"))
+    files = glob.glob(os.path.join(generated_dir, "*.py"))
     files.sort()
+    if not files:
+        raise FileNotFoundError(f"No .py files found under {generated_dir}")
     
     cast_chunker = CASTChunker()
     std_chunker = StandardChunker(chunk_size=600, overlap=50)
@@ -139,7 +149,7 @@ def run_metrics():
         with open(file_path, "r") as f:
             full_code = f.read()
             
-        snippet = get_snippet(full_code)
+        snippet = get_snippet(full_code, num_lines=snippet_size)
         identifiers = extract_identifiers(snippet)
         definitions = find_definitions(full_code, identifiers, snippet)
         
@@ -147,7 +157,7 @@ def run_metrics():
         vector_store.clear()
         chunks = std_chunker.chunk_file(file_path)
         vector_store.add_chunks(chunks)
-        retrieved_std = vector_store.query(snippet, n_results=TOP_K)
+        retrieved_std = vector_store.query(snippet, n_results=top_k)
         
         # Completeness
         comp_score = sum(1 for c in retrieved_std if is_syntactically_complete(c['content'])) / len(retrieved_std) if retrieved_std else 0
@@ -166,10 +176,10 @@ def run_metrics():
             
             # Query Expansion: Append identifiers to help dense retrieval find definitions
             expanded_query = snippet + "\n\nKeywords: " + " ".join(identifiers)
-            if "sample_10.py" in file_path:
+            if not quiet and "sample_10.py" in file_path:
                 print(f"DEBUG: Identifiers: {identifiers}")
                 print(f"DEBUG: Expanded Query: {expanded_query[:100]}...")
-            retrieved_cast = vector_store.query(expanded_query, n_results=TOP_K)
+            retrieved_cast = vector_store.query(expanded_query, n_results=top_k)
             
             # Completeness
             comp_score = sum(1 for c in retrieved_cast if is_syntactically_complete(c['content'])) / len(retrieved_cast) if retrieved_cast else 0
@@ -208,14 +218,27 @@ def run_metrics():
 - Standard RAG: {avg_std_comp:.2f}%
 - cAST RAG:     {avg_cast_comp:.2f}%
 
-## Definition Recall@{TOP_K}
+## Definition Recall@{top_k}
 (Percentage of identifiers in the snippet whose definitions were successfully retrieved)
 - Standard RAG: {avg_std_rec:.2f}%
 - cAST RAG:     {avg_cast_rec:.2f}%
 """
-    print(report)
-    with open("experiment_2_metrics.md", "w") as f:
-        f.write(report)
+    if not quiet:
+        print(report)
+
+    if output_file:
+        with open(output_file, "w") as f:
+            f.write(report)
+
+    return {
+        "report": report,
+        "averages": {
+            "std": {"completeness": avg_std_comp, "recall": avg_std_rec},
+            "cast": {"completeness": avg_cast_comp, "recall": avg_cast_rec},
+        },
+        "top_k": top_k,
+        "output_file": output_file,
+    }
 
 if __name__ == "__main__":
     run_metrics()

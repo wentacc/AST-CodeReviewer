@@ -9,18 +9,43 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ast_reviewer.agents.experts import BugExpert, SecurityExpert, StyleExpert
 from ast_reviewer.retrieval.cast.pipeline import CASTChunker
 from ast_reviewer.retrieval.vector_store import VectorStore
+from experiment_2_metrics import (
+    METRICS_OUTPUT_FILE as DEFAULT_EVAL_OUTPUT_FILE,
+    GENERATED_DIR as DEFAULT_EVAL_GENERATED_DIR,
+    SNIPPET_SIZE as DEFAULT_EVAL_SNIPPET_SIZE,
+    TOP_K as DEFAULT_EVAL_TOP_K,
+    run_metrics as run_evaluation_metrics,
+)
 
 def main():
     parser = argparse.ArgumentParser(description="AST-Based Code Reviewer with Retrieval")
-    parser.add_argument("target", help="File or directory to review")
+    parser.add_argument("target", nargs="?", help="File or directory to review")
     parser.add_argument("--context", default=".", help="Directory to use for context retrieval (default: current dir)")
     parser.add_argument("--no-retrieval", action="store_true", help="Disable context retrieval")
     parser.add_argument("--clear-db", action="store_true", help="Clear the vector database before indexing")
     parser.add_argument("--lora", type=str, default=None, help="Path to LoRA adapter folder. If None, use base Gemma model.")
+    parser.add_argument("--evaluation", action="store_true", help="Run evaluation metrics instead of reviewing code")
+    parser.add_argument("--evaluation-generated-dir", default=DEFAULT_EVAL_GENERATED_DIR, help="Directory containing generated .py samples for evaluation")
+    parser.add_argument("--evaluation-snippet-size", type=int, default=DEFAULT_EVAL_SNIPPET_SIZE, help="Snippet size (number of lines) used during evaluation")
+    parser.add_argument("--evaluation-top-k", type=int, default=DEFAULT_EVAL_TOP_K, help="Top-K documents to retrieve when running evaluation")
+    parser.add_argument("--evaluation-output", default=DEFAULT_EVAL_OUTPUT_FILE, help="Where to store the evaluation report (markdown)")
     
     args = parser.parse_args()
     
+    if args.evaluation:
+        result = run_evaluation_metrics(
+            generated_dir=args.evaluation_generated_dir,
+            snippet_size=args.evaluation_snippet_size,
+            top_k=args.evaluation_top_k,
+            output_file=args.evaluation_output,
+        )
+        print(f"Evaluation complete. Report saved to {result['output_file']}")
+        return
+    
     target_path = args.target
+    if not target_path:
+        print("Error: target path is required when not running evaluation.")
+        return
     if not os.path.exists(target_path):
         print(f"Error: Target '{target_path}' does not exist.")
         return
