@@ -110,10 +110,18 @@ def calculate_recall(retrieved_chunks, definitions):
     for ident, def_lines in definitions.items():
         found = False
         for chunk in retrieved_chunks:
+            # Check 1: Content match (Standard RAG style)
             for def_line in def_lines:
                 if def_line.strip() in chunk['content']:
                     found = True
                     break
+            
+            # Check 2: Metadata match (cAST style)
+            # If the chunk explicitly says it belongs to the function 'ident', that counts!
+            if not found and 'metadata' in chunk and 'name' in chunk['metadata']:
+                if ident in chunk['metadata']['name']:
+                     found = True
+                     
             if found: break
         if found:
             found_count += 1
