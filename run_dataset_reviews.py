@@ -7,19 +7,16 @@ Example:
         ../origin_dataset/Python-22k/Python-22k/valid.json \
         --repo-cache ../repo_cache \
         --output runs/valid_predictions_lora.jsonl \
+        --resume \
         --lora ../gemma4b-lora-python \
         --no-retrieval
-
-valid_predictions_lora: base+lora+retrieval
-valid_predictions: base+retrieval
-valid_predictions_base: base -> 2197 samples
 """
 
 import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from ast_reviewer.agents.experts import CommentConsistencyExpert
 from ast_reviewer.retrieval.cast.pipeline import CASTChunker
@@ -41,6 +38,11 @@ def parse_args() -> argparse.Namespace:
         "--output",
         default="dataset_reviews.jsonl",
         help="Path to output JSONL file with added expert/model outputs.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from existing output file instead of overwriting.",
     )
     parser.add_argument(
         "--limit",
@@ -127,6 +129,36 @@ def load_dataset(path: str, start: int, limit: Optional[int]) -> List[Dict]:
     return sliced
 
 
+def sample_key(sample: Dict) -> str:
+    """Generate a unique key for a dataset sample."""
+    if sample.get("id"):
+        return str(sample["id"])
+    return "|".join([
+        sample.get("repo_url", ""),
+        sample.get("commit", ""),
+        sample.get("path", "")
+    ])
+
+
+def load_processed_keys(output_path: Path) -> Set[str]:
+    processed: Set[str] = set()
+    if not output_path.exists():
+        return processed
+    with output_path.open("r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            key = sample_key(record)
+            if key:
+                processed.add(key)
+    return processed
+
+
 def build_review_input(sample: Dict) -> str:
     sections = []
     def add_section(title: str, content: str) -> None:
@@ -183,8 +215,19 @@ def main() -> None:
     ]
     store_cache: Dict[str, VectorStore] = {}
 
+    output_path = Path(args.output)
+    if not output_path.parent.exists():
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    if args.resume:
+        processed_keys = load_processed_keys(output_path)
+        write_mode = "a"
+        if processed_keys:
+            print(f"Resuming from {output_path}, found {len(processed_keys)} processed samples.")
+    else:
+        processed_keys = set()
+        write_mode = "w"
     processed = 0
-    with open(args.output, "w") as fout:
+    with open(output_path, write_mode) as fout:
         for idx, sample in enumerate(dataset, start=args.start):
             repo_url = sample.get("repo_url")
             commit = sample.get("commit")
@@ -202,6 +245,10 @@ def main() -> None:
             if not target_rel:
                 print(f"[skip] sample {idx} missing file path.", file=sys.stderr)
                 continue
+            key = sample_key(sample)
+            if key in processed_keys:
+                print(f"[skip] sample {idx} already processed ({key}).")
+                continue
 
             target_path = repo_root / target_rel
             if not target_path.exists():
@@ -217,6 +264,7 @@ def main() -> None:
                 continue
 
             fout.write(json.dumps(record) + "\n")
+            processed_keys.add(key)
             processed += 1
 
     print(f"Completed {processed} samples. Results written to {args.output}")

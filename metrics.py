@@ -9,6 +9,7 @@ Usage:
 import argparse
 import json
 from pathlib import Path
+from typing import List, Sequence
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,6 +23,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+AFFIRMATIVE_PHRASES = [
+    "The existing comment is still accurate",
+    "The comment is still accurate",
+    "comment remains accurate",
+    "comment remains correct",
+    "comment is accurate",
+    "comment is still correct",
+    "comment still matches",
+    "no change required",
+    "still accurate",
+]
+
+
+def contains_affirmative(text: str) -> bool:
+    lower = text.lower()
+    return any(phrase in lower for phrase in AFFIRMATIVE_PHRASES)
+
+
 def load_predictions(path: Path, expert: str):
     y_true, y_pred = [], []
     with path.open("r") as f:
@@ -33,11 +52,23 @@ def load_predictions(path: Path, expert: str):
             label = record.get("label")
             outputs = record.get("model_output", {})
             pred = outputs.get(expert)
+            expert_comments = record.get("expert_output", {}).get(expert, [])
             if label is None or pred is None:
                 print(f"[warn] Missing label/prediction on line {line_num}, skipping.")
                 continue
+            prediction = int(pred)
+            comments: Sequence[str] = []
+            if isinstance(expert_comments, list):
+                comments = [c for c in expert_comments if isinstance(c, str)]
+            elif isinstance(expert_comments, str):
+                comments = [expert_comments]
+
+            if prediction == 1 and comments:
+                if any(contains_affirmative(comment) for comment in comments):
+                    prediction = 0
+
             y_true.append(int(label))
-            y_pred.append(int(pred))
+            y_pred.append(prediction)
     return y_true, y_pred
 
 

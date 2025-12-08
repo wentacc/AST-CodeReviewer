@@ -8,3 +8,4 @@ peft
 transformers
 accelerate
 sentencepiece
+sentence_transformers
